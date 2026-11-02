@@ -1,0 +1,38 @@
+name: Automerge
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  merge:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge unless the PR touches the automerge setup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          # The workflow always runs from main, so a PR cannot rewrite the code that judges it.
+          # Any change under .github/ could break automerge, so such PRs are left for a manual merge.
+          changed=$(gh api "repos/$GH_REPO/pulls/$PR" --jq .changed_files)
+          files=$(gh api "repos/$GH_REPO/pulls/$PR/files" --paginate --jq '.[] | .filename, (.previous_filename // empty)')
+
+          if [ "$changed" -ge 3000 ] || echo "$files" | grep -q '^\.github/'; then
+            gh pr comment "$PR" --edit-last --create-if-none \
+              --body "Automerge skipped: this PR touches .github/ (or is too big to check), so it needs a manual merge."
+            exit 0
+          fi
+
+          gh pr merge "$PR" --merge
