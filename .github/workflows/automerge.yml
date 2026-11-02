@@ -36,3 +36,4 @@ jobs:
           fi
 
           gh pr merge "$PR" --merge
+# test
